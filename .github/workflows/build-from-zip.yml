@@ -9,7 +9,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1) Rozpakuj ZIP i nie nadpisuj .github
+      # 1) Rozpakuj pierwszy ZIP w repo (nie nadpisuj .github)
       - name: Find & unzip project (skip .github)
         shell: bash
         run: |
@@ -29,7 +29,7 @@ jobs:
           rm -rf extracted
           echo "✅ Rozpakowano."
 
-      # 2) settings.gradle.kts z repozytoriami Google + Maven Central
+      # 2) settings.gradle.kts – repozytoria Google + Maven Central
       - name: Patch settings.gradle.kts
         shell: bash
         run: |
@@ -43,18 +43,15 @@ jobs:
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "FloorFit"
           include(":app")
           EOF
-          echo "✅ Nadpisano settings.gradle.kts"
+          echo "✅ settings.gradle.kts OK"
 
-      # 3) app/build.gradle.kts zgodny z Jetpack Compose + Material3
-      - name: Patch app/build.gradle.kts for Compose
+      # 3) build.gradle.kts – kompatybilny z Jetpack Compose + Material3
+      - name: Patch app/build.gradle.kts (Compose)
         shell: bash
         run: |
           mkdir -p app
@@ -63,11 +60,9 @@ jobs:
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
           }
-
           android {
               namespace = "pl.floorfit.app"
               compileSdk = 34
-
               defaultConfig {
                   applicationId = "pl.floorfit.app"
                   minSdk = 24
@@ -75,25 +70,21 @@ jobs:
                   versionCode = 1
                   versionName = "1.0"
               }
-
               buildTypes {
                   release {
                       isMinifyEnabled = false
                       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
                   }
               }
-
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
               kotlinOptions { jvmTarget = "17" }
-
               buildFeatures { compose = true }
               composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
               packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
           }
-
           dependencies {
               val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
               implementation(composeBom)
@@ -106,24 +97,92 @@ jobs:
               debugImplementation("androidx.compose.ui:ui-tooling")
           }
           EOF
-          echo "✅ Ustawiono build.gradle.kts (Compose)"
+          echo "✅ build.gradle.kts OK"
 
-      # 4) Minimalny, poprawny manifest (Theme.Material3 działa dzięki material:1.12.0)
+      # 4) Dołóż minimalne zasoby i MainActivity – tylko jeśli brakuje
+      - name: Ensure minimal resources & MainActivity
+        shell: bash
+        run: |
+          set -e
+          mkdir -p app/src/main/java/pl/floorfit/app
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/res/drawable
+          # strings.xml
+          [ -f app/src/main/res/values/strings.xml ] || cat > app/src/main/res/values/strings.xml <<'E'
+          <resources><string name="app_name">FloorFit</string></resources>
+          E
+          # themes.xml – korzysta z Material3 (zależność dodana wyżej)
+          [ -f app/src/main/res/values/themes.xml ] || cat > app/src/main/res/values/themes.xml <<'E'
+          <resources>
+              <style name="Theme.FloorFit" parent="Theme.Material3.Light.NoActionBar"/>
+          </resources>
+          E
+          # adaptive icon
+          [ -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml ] || cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'E'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/white"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          E
+          [ -f app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml ] || cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'E'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/white"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          E
+          # prosta grafika foreground (wektor)
+          [ -f app/src/main/res/drawable/ic_launcher_foreground.xml ] || cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'E'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <path android:fillColor="#1E90FF" android:pathData="M0,0h108v108h-108z"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M20,32h68v8h-68zM20,50h68v8h-68zM20,68h68v8h-68z"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M40,24h28v60h-28z" android:fillAlpha="0.15"/>
+          </vector>
+          E
+          # MainActivity.kt (tylko jeśli brak)
+          [ -f app/src/main/java/pl/floorfit/app/MainActivity.kt ] || cat > app/src/main/java/pl/floorfit/app/MainActivity.kt <<'E'
+          package pl.floorfit.app
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.unit.dp
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContent {
+                      MaterialTheme { 
+                          Surface { 
+                              Column(Modifier.padding(24.dp)) {
+                                  Text("FloorFit", style = MaterialTheme.typography.headlineMedium)
+                                  Text("App zbudowana z GitHub Actions ✅")
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          E
+          echo "✅ Zasoby i MainActivity gotowe"
+
+      # 5) Minimalny manifest (jeśli w projekcie był błędny – nadpiszemy)
       - name: Patch AndroidManifest.xml
         shell: bash
         run: |
           mkdir -p app/src/main
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          cat > app/src/main/AndroidManifest.xml <<'E'
           <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="pl.floorfit.app">
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="pl.floorfit.app">
               <application
                   android:allowBackup="true"
                   android:label="@string/app_name"
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:supportsRtl="true"
-                  android:theme="@style/Theme.Material3.Light.NoActionBar">
+                  android:theme="@style/Theme.FloorFit">
                   <activity
                       android:name="pl.floorfit.app.MainActivity"
                       android:exported="true">
@@ -134,10 +193,10 @@ jobs:
                   </activity>
               </application>
           </manifest>
-          EOF
-          echo "✅ Podmieniono AndroidManifest.xml"
+          E
+          echo "✅ Manifest OK"
 
-      # 5) JDK + Gradle
+      # 6) JDK + Gradle
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -148,13 +207,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.7
-          # cache: false  # można odkomentować, by całkiem wyłączyć cache
 
-      # 6) Build APK – pokaż pełny log
+      # 7) Build APK – pełniejszy log
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --info --no-daemon
 
-      # 7) Artefakt do pobrania
+      # 8) Artefakt
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
