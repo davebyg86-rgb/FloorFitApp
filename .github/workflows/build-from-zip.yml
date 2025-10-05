@@ -9,6 +9,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # 1) Rozpakuj ZIP i nie nadpisuj .github
       - name: Find & unzip project (skip .github)
         shell: bash
         run: |
@@ -28,6 +29,7 @@ jobs:
           rm -rf extracted
           echo "✅ Rozpakowano."
 
+      # 2) settings.gradle.kts z repozytoriami Google + Maven Central
       - name: Patch settings.gradle.kts
         shell: bash
         run: |
@@ -51,56 +53,66 @@ jobs:
           EOF
           echo "✅ Nadpisano settings.gradle.kts"
 
-      - name: Patch build.gradle (dependencies)
+      # 3) app/build.gradle.kts zgodny z Jetpack Compose + Material3
+      - name: Patch app/build.gradle.kts for Compose
         shell: bash
         run: |
-          cat > app/build.gradle <<'EOF'
+          mkdir -p app
+          cat > app/build.gradle.kts <<'EOF'
           plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
           }
 
           android {
-              namespace 'pl.floorfit.app'
-              compileSdk 34
+              namespace = "pl.floorfit.app"
+              compileSdk = 34
 
               defaultConfig {
-                  applicationId "pl.floorfit.app"
-                  minSdk 24
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
+                  applicationId = "pl.floorfit.app"
+                  minSdk = 24
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
               }
 
               buildTypes {
                   release {
-                      minifyEnabled false
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                      isMinifyEnabled = false
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
                   }
               }
 
               compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
               }
+              kotlinOptions { jvmTarget = "17" }
 
-              kotlinOptions {
-                  jvmTarget = '17'
-              }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+              packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
           }
 
           dependencies {
-              implementation 'androidx.core:core-ktx:1.12.0'
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'com.google.android.material:material:1.11.0'
-              implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+              val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+              implementation(composeBom)
+              implementation("androidx.activity:activity-compose:1.9.2")
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3:1.2.1")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+              implementation("com.google.android.material:material:1.12.0") // Theme.Material3 w XML
+              debugImplementation("androidx.compose.ui:ui-tooling")
           }
           EOF
-          echo "✅ Dodano brakującą bibliotekę Material"
+          echo "✅ Ustawiono build.gradle.kts (Compose)"
 
+      # 4) Minimalny, poprawny manifest (Theme.Material3 działa dzięki material:1.12.0)
       - name: Patch AndroidManifest.xml
         shell: bash
         run: |
+          mkdir -p app/src/main
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -113,7 +125,7 @@ jobs:
                   android:supportsRtl="true"
                   android:theme="@style/Theme.Material3.Light.NoActionBar">
                   <activity
-                      android:name=".MainActivity"
+                      android:name="pl.floorfit.app.MainActivity"
                       android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -123,8 +135,9 @@ jobs:
               </application>
           </manifest>
           EOF
-          echo "✅ Poprawiono AndroidManifest.xml"
+          echo "✅ Podmieniono AndroidManifest.xml"
 
+      # 5) JDK + Gradle
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -135,10 +148,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.7
+          # cache: false  # można odkomentować, by całkiem wyłączyć cache
 
+      # 6) Build APK – pokaż pełny log
       - name: Build debug APK
-        run: gradle :app:assembleDebug
+        run: gradle :app:assembleDebug --stacktrace --info --no-daemon
 
+      # 7) Artefakt do pobrania
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
