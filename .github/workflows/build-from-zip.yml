@@ -1,1 +1,79 @@
 
+name: Build APK from ZIP
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # 1) Znajdź dowolny ZIP w repo i rozpakuj (pomijamy .github, by nie nadpisać workflowa)
+      - name: Find & unzip project (skip .github)
+        shell: bash
+        run: |
+          set -e
+          ZIP_FILE=$(ls -1 *.zip | head -n1 || true)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "❌ Brak pliku .zip w repo."
+            exit 1
+          fi
+          echo "➡️ ZIP: $ZIP_FILE"
+          mkdir extracted
+          unzip -o "$ZIP_FILE" -d extracted
+          ROOT_DIR=$(ls -1 extracted | head -n1)
+          echo "➡️ ROOT_DIR: $ROOT_DIR"
+          rm -rf "extracted/$ROOT_DIR/.github" || true
+          shopt -s dotglob
+          mv "extracted/$ROOT_DIR"/* .
+          rm -rf extracted
+          echo "✅ Rozpakowano."
+
+      # 2) Ustaw poprawne repozytoria (Google + Maven Central)
+      - name: Patch settings.gradle.kts
+        shell: bash
+        run: |
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FloorFit"
+          include(":app")
+          EOF
+          echo "✅ Nadpisano settings.gradle.kts"
+
+      # 3) JDK + Gradle
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      # 4) Build APK
+      - name: Build debug APK
+        run: gradle :app:assembleDebug
+
+      # 5) Artefakt do pobrania
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FloorFit-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
