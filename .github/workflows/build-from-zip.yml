@@ -9,7 +9,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1) Znajdź dowolny ZIP w repo i rozpakuj (pomijamy .github, by nie nadpisać workflowa)
+      # 1) Znajdź ZIP i rozpakuj (nie nadpisuj .github)
       - name: Find & unzip project (skip .github)
         shell: bash
         run: |
@@ -23,14 +23,13 @@ jobs:
           mkdir extracted
           unzip -o "$ZIP_FILE" -d extracted
           ROOT_DIR=$(ls -1 extracted | head -n1)
-          echo "➡️ ROOT_DIR: $ROOT_DIR"
           rm -rf "extracted/$ROOT_DIR/.github" || true
           shopt -s dotglob
           mv "extracted/$ROOT_DIR"/* .
           rm -rf extracted
           echo "✅ Rozpakowano."
 
-      # 2) Ustaw poprawne repozytoria (Google + Maven Central)
+      # 2) Upewnij się, że repozytoria są ustawione (Google + Maven Central)
       - name: Patch settings.gradle.kts
         shell: bash
         run: |
@@ -54,7 +53,35 @@ jobs:
           EOF
           echo "✅ Nadpisano settings.gradle.kts"
 
-      # 3) JDK + Gradle
+      # 3) Napraw manifest – wersja minimalna i poprawna
+      - name: Patch AndroidManifest.xml
+        shell: bash
+        run: |
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="pl.floorfit.app">
+              <application
+                  android:allowBackup="true"
+                  android:label="@string/app_name"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.FloorFit">
+                  <activity
+                      android:name="pl.floorfit.app.MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          echo "✅ Podmieniono AndroidManifest.xml"
+
+      # 4) JDK + Gradle
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -66,11 +93,11 @@ jobs:
         with:
           gradle-version: 8.7
 
-      # 4) Build APK
+      # 5) Build APK
       - name: Build debug APK
         run: gradle :app:assembleDebug
 
-      # 5) Artefakt do pobrania
+      # 6) Artefakt do pobrania
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
