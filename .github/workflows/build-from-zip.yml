@@ -9,7 +9,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1) Znajdź ZIP i rozpakuj (nie nadpisuj .github)
       - name: Find & unzip project (skip .github)
         shell: bash
         run: |
@@ -29,7 +28,6 @@ jobs:
           rm -rf extracted
           echo "✅ Rozpakowano."
 
-      # 2) Upewnij się, że repozytoria są ustawione (Google + Maven Central)
       - name: Patch settings.gradle.kts
         shell: bash
         run: |
@@ -53,7 +51,53 @@ jobs:
           EOF
           echo "✅ Nadpisano settings.gradle.kts"
 
-      # 3) Napraw manifest – wersja minimalna i poprawna
+      - name: Patch build.gradle (dependencies)
+        shell: bash
+        run: |
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'pl.floorfit.app'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "pl.floorfit.app"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+          }
+          EOF
+          echo "✅ Dodano brakującą bibliotekę Material"
+
       - name: Patch AndroidManifest.xml
         shell: bash
         run: |
@@ -67,9 +111,9 @@ jobs:
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
                   android:supportsRtl="true"
-                  android:theme="@style/Theme.FloorFit">
+                  android:theme="@style/Theme.Material3.Light.NoActionBar">
                   <activity
-                      android:name="pl.floorfit.app.MainActivity"
+                      android:name=".MainActivity"
                       android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -79,9 +123,8 @@ jobs:
               </application>
           </manifest>
           EOF
-          echo "✅ Podmieniono AndroidManifest.xml"
+          echo "✅ Poprawiono AndroidManifest.xml"
 
-      # 4) JDK + Gradle
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -93,11 +136,9 @@ jobs:
         with:
           gradle-version: 8.7
 
-      # 5) Build APK
       - name: Build debug APK
         run: gradle :app:assembleDebug
 
-      # 6) Artefakt do pobrania
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
